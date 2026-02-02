@@ -349,7 +349,7 @@ def _rocm_aiter_mla_decode_fwd_impl(
 ) -> None:
     from aiter.mla import mla_decode_fwd
 
-    kwargs = {
+    kwargs: dict[str, float | torch.Tensor | None] = {
         "sm_scale": sm_scale,
         "logit_cap": logit_cap,
     }
@@ -1570,7 +1570,7 @@ class rocm_aiter_ops:
     def group_fp8_quant(
         input_2d: torch.Tensor,
         group_size: int = 128,
-    ) -> tuple[torch.Tensor, ...]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         assert group_size == 128, "Group size must be 128"
         return torch.ops.vllm.rocm_aiter_group_fp8_quant(input_2d, group_size)
 

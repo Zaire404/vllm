@@ -13,7 +13,7 @@ import time
 from collections.abc import Generator, MutableMapping
 from dataclasses import asdict, dataclass, field, fields
 from fnmatch import fnmatch
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import regex as re
 import torch
@@ -337,7 +337,7 @@ class TensorizerConfig(MutableMapping):
                 " is unstable and may lead to errors."
             )
 
-    def open_stream(self, tensorizer_args: Optional["TensorizerArgs"] = None):
+    def open_stream(self, tensorizer_args: "TensorizerArgs | None" = None):
         if tensorizer_args is None:
             tensorizer_args = self._construct_tensorizer_args()
 
