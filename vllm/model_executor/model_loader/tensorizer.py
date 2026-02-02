@@ -12,6 +12,7 @@ import threading
 import time
 from collections.abc import Generator, MutableMapping
 from dataclasses import asdict, dataclass, field, fields
+from fnmatch import fnmatch
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 import regex as re
@@ -66,6 +67,19 @@ __all__ = [
 ]
 
 logger = init_logger(__name__)
+
+_ARTIFACT_IGNORE_PATTERNS = [
+    "*.pt",
+    "*.safetensors",
+    "*.bin",
+    "*.cache",
+    "*.gitattributes",
+    "*.md",
+]
+
+
+def _should_ignore_artifact(filename: str) -> bool:
+    return any(fnmatch(filename, pattern) for pattern in _ARTIFACT_IGNORE_PATTERNS)
 
 
 def is_valid_deserialization_uri(uri: str | None) -> bool:
@@ -619,6 +633,26 @@ def is_vllm_tensorized(tensorizer_config: "TensorizerConfig") -> bool:
     return ".vllm_tensorized_marker" in deserializer
 
 
+def _serialize_extra_artifacts_from_dir(
+    tensorizer_args: TensorizerArgs, source_dir: str
+) -> None:
+    for artifact in os.scandir(source_dir):
+        if not artifact.is_file():
+            continue
+        if _should_ignore_artifact(artifact.name):
+            continue
+        with (
+            open(artifact.path, "rb") as f,
+            open_stream(
+                f"{tensorizer_args.tensorizer_dir}/{artifact.name}",
+                mode="wb+",
+                **tensorizer_args.stream_kwargs,
+            ) as stream,
+        ):
+            logger.info("Writing artifact %s", artifact.name)
+            stream.write(f.read())
+
+
 def serialize_extra_artifacts(
     tensorizer_args: TensorizerArgs, served_model_name: str | list[str] | None
 ) -> None:
@@ -628,32 +662,21 @@ def serialize_extra_artifacts(
             f"not {type(served_model_name)}."
         )
 
+    if os.path.exists(served_model_name):
+        if not os.path.isdir(served_model_name):
+            raise ValueError(
+                "Local model path must be a directory when serializing extra artifacts."
+            )
+        _serialize_extra_artifacts_from_dir(tensorizer_args, served_model_name)
+        return
+
     with tempfile.TemporaryDirectory() as tmpdir:
         snapshot_download(
             served_model_name,
             local_dir=tmpdir,
-            ignore_patterns=[
-                "*.pt",
-                "*.safetensors",
-                "*.bin",
-                "*.cache",
-                "*.gitattributes",
-                "*.md",
-            ],
+            ignore_patterns=_ARTIFACT_IGNORE_PATTERNS,
         )
-        for artifact in os.scandir(tmpdir):
-            if not artifact.is_file():
-                continue
-            with (
-                open(artifact.path, "rb") as f,
-                open_stream(
-                    f"{tensorizer_args.tensorizer_dir}/{artifact.name}",
-                    mode="wb+",
-                    **tensorizer_args.stream_kwargs,
-                ) as stream,
-            ):
-                logger.info("Writing artifact %s", artifact.name)
-                stream.write(f.read())
+        _serialize_extra_artifacts_from_dir(tensorizer_args, tmpdir)
 
 
 def serialize_vllm_model(
